@@ -1,0 +1,183 @@
+---
+title: "Straphylocous Infection Rate in Burn Victims Analysis"
+author: "Matthew Aydin, Angel Alcantara, Adam Sztonyk"
+format: pdf
+date: "2025-05-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(KMsurv)
+library(survival)
+library(survminer)
+data(burn)
+```
+
+# 1 Introduction
+
+The **burn** dataset, originally from Ichida and available in the `KMsurv` package (Klein), contains clinical records of 154 burn patients. This dataset was collected to study factors influencing burn wound infections, particularly Staphylococcus aureus infections, in a clinical setting. We define the failure time as `T3`, representing the number of days until Staphylococcus aureus infection or censoring, with the event indicator `D3` (1 = infection, 0 = censored). Additionally, we consider the excision event at time `T1` (days to excision or time on study) with indicator `D1` (1 = excision performed, 0 = no excision), which we will model as a time-varying covariate to explore its impact on infection risk.
+
+The dataset includes the following covariates:
+
+- **Z1**: Treatment type (0 = routine bathing, 1 = body cleansing)
+- **Z2**: Gender (0 = male, 1 = female)
+- **Z3**: Race (0 = nonwhite, 1 = white)
+- **Z4**: Percent of total surface area burned (continuous, in percentage units)
+- **Z5-Z10**: Binary indicators (0 = no, 1 = yes) for burn sites: head (Z5), buttock (Z6), trunk (Z7), upper leg (Z8), lower leg (Z9), respiratory tract (Z10)
+- **Z11**: Type of burn (1 = chemical, 2 = scald, 3 = electric, 4 = flame)
+
+The primary scientific question motivating this study is: *How does the body cleansing treatment (Z1=1) affect the hazard of Staphylococcus aureus infection compared to routine bathing (Z1=0), and does this effect vary with the excision event (T1), while accounting for other patient and burn characteristics?* To address this, we will extend our analysis beyond the standard Cox model by incorporating the time-varying nature of the excision event.
+
+```{r}
+burn.surv <- Surv(time = burn$T3, event = burn$D3)
+ggsurvplot(
+  survfit(burn.surv ~ Z1, data = burn),
+  surv.median.line = "hv",
+  legend.labs = c("Routine Bathing", "Body Cleansing"),
+  xlab = "Time (Days)",
+  ylab = "Survival Probability",
+  title = "KM Estimate by Treatment Type"
+)
+```
+
+# 2 Model Fitting
+
+We begin with Kaplan-Meier estimation, followed by fitting Cox proportional hazards models. We use forward stepwise selection with AIC to identify key covariates, starting with a standard Cox model and later extending it to include time-varying effects.
+
+## 2.1 Kaplan-Meier Estimate
+
+```{r}
+ggsurvplot(
+  survfit(burn.surv ~ 1),
+  surv.median.line = "hv",
+  data = burn,
+  xlab = "Time (Days)",
+  ylab = "Survival Probability",
+  title = "KM Estimate of Time to Staphylococcus Aureus Infection"
+)
+```
+
+The overall Kaplan-Meier curve shows a median survival time of approximately 51 days, offering a baseline infection risk estimate before covariate adjustment.
+
+## 2.2 Cox Proportional Hazards Model
+
+### 2.2.1 Full Model
+
+```{r}
+cox_full <- coxph(burn.surv ~ Z1 + Z2 + Z3 + Z4 + Z5 + 
+                    Z6 + Z7 + Z8 + Z9 + Z10 + as.factor(Z11), data = burn)
+summary(cox_full)
+```
+
+The full Cox model reveals that body cleansing (Z1) has a hazard ratio (HR) of 0.521 (95% CI: 0.276–0.982, p = 0.044), indicating a 47.9% reduction in infection risk compared to routine bathing. Race (Z3) shows a significant HR of 8.577 (95% CI: 1.117–65.875, p = 0.039), suggesting higher risk for white patients. Electric burns (Z11=3) have a marginally significant HR of 8.957 (p = 0.052) compared to chemical burns. The model’s concordance is 0.739, with significant overall tests (p ≤ 0.05).
+
+### 2.2.2 Stepwise Selection by AIC
+
+```{r}
+cox_step <- step(coxph(burn.surv ~ 1, data = burn), 
+                 scope = ~ Z1 + Z2 + Z3 + Z4 + Z5 + 
+                   Z6 + Z7 + Z8 + Z9 + Z10 + as.factor(Z11), 
+                 direction = "forward", k = 2)
+summary(cox_step)
+```
+
+The stepwise model retains Z1, Z2, Z3, and Z11, reinforcing the protective effect of body cleansing (HR = 0.523, p = 0.030) and the elevated risk for white patients (HR = 9.850, p = 0.026). Electric burns remain marginally significant (HR = 7.901, p = 0.058).
+
+# 3 Checking Proportional Hazards Assumptions
+
+We assess the PH assumption for key covariates (Z1, Z2, Z3, Z11) using log-log plots, Cox ZPH tests, and Schoenfeld residuals.
+
+## 3.1 Log-log Plots
+
+```{r}
+burn.fit1 <- survfit(burn.surv ~ Z1, data = burn)
+ggsurvplot(burn.fit1, legend.labs = c("Routine Bathing", "Body Cleansing"), fun = "cloglog") +
+  labs(title = "Log(-log) Survival Curve by Treatment (Z1)", x = "Time (Days)")
+```
+
+The parallel curves for Z1 suggest the PH assumption holds. Similar plots for Z2 show reasonable parallelism, while Z3 and Z11 exhibit divergence, indicating potential PH violations.
+
+## 3.2 Cox ZPH Test
+
+```{r Cox ZPH Test}
+zph_test <- cox.zph(cox_step)
+print(zph_test)
+```
+
+The test yields p-values of 0.501 (Z1), 0.209 (Z2), 0.119 (Z3), and 0.038 (Z11), confirming a PH violation for Z11.
+
+## 3.3 Schoenfeld Residuals
+
+```{r}
+plot(zph_test, var = "Z1")
+```
+
+```{r}
+plot(zph_test, var = "Z2")
+```
+
+```{r}
+plot(zph_test, var = "Z3")
+```
+
+```{r}
+plot(zph_test, var = "as.factor(Z11)")
+```
+
+Residual plots for Z1 and Z2 show no trends (p = 0.501, 0.209), supporting PH. Z3 shows a slight trend (p = 0.119), and Z11 exhibits clear patterns (p = 0.038), confirming a violation.
+
+# 4 Time-Varying Treatment Effect
+
+To address the feedback on innovation and the time element of the intervention at T1, we model excision (D1) as a time-varying covariate (Exc), where Exc(t) = 0 before T1 and 1 after T1 for patients with D1=1, and 0 otherwise. We also explore its interacion with treatment (Z1). We then do the same with Prophylactic antibiotic treatment (D2).
+
+```{r}
+burn$id <- 1:nrow(burn)
+burn_base <- burn[, c("id","T3", "D3", "Z1", "Z2", "Z3", "Z11")]
+burn_tv <- tmerge(burn_base, burn_base, id =id, tstop = T3, event = event(T3, D3))
+excision_data <- burn[burn$D1 == 1, c("id", "T1")]
+names(excision_data) <- c("id", "exc_time")
+burn_tv <- tmerge(burn_tv, excision_data, id= id, Exc = tdc(exc_time))
+cox_tv <- coxph(Surv(tstart, tstop, event) ~ Z1 + Z2 + Z3 + as.factor(Z11) + Exc + Z1:Exc, data = burn_tv)
+summary(cox_tv)
+```
+
+The model shows body cleansing reduces the hazard (HR = 0.524, p = 0.032) before adding excision as a time dependent covariate to the model. The excision effect (Exc) has an HR of 0.5689 (p = 0.3557), and the interaction Z1:Exc has an HR of 0.6508 (p = 0.5382), both non-significant, suggesting no strong evidence that excision modifies the treatment effect.
+
+```{r}
+burn$id <- 1:nrow(burn)
+burntre_tv <- tmerge(burn_base, burn_base, id = id, tstop = T3, event = event(T3, D3))
+treatment_data <- burn[burn$D2 == 1, c("id", "T2")]
+names(treatment_data) <- c("id", "tre_time")
+burntre_tv <- tmerge(burntre_tv, treatment_data, id= id, Tre = tdc(tre_time))
+coxtre_tv <- coxph(Surv(tstart, tstop, event) ~ Z1 + Z2 + Z3 + as.factor(Z11) + Tre + Z1:Tre, data = burntre_tv)
+summary(coxtre_tv)
+```
+The prophylactic antiobiotic treamtent effect (Tre) has an HR of 1.1709 (p = 0.7565), and the interaction Z1:Tre has an HR of 0.6465 (p = 0.5200), both non-significant, suggesting no strong evidence that prophylactic antiobiotic treatment modifies the treatment (Z1) effect.
+
+```{r}
+burn_tv <- tmerge(burn_tv, treatment_data, id= id, Tre = tdc(tre_time))
+cox_exc_tre_tv <- coxph(Surv(tstart, tstop, event) ~ Z1 + Z2 + Z3 + as.factor(Z11) + Exc + Tre, data = burn_tv)
+summary(cox_exc_tre_tv)
+```
+The excision effect (Exc) has an HR of 0.45403 (p = 0.1142) suggesting no strong evidence that excision is significant. The prophylactic antiobiotic treamtent effect (Tre) has an HR of 0.98477 (p = 0.9686) suggesting no strong evidence that prophylactic antiobiotic treatment after adjusting for excision is significant. 
+
+
+# 5 Conclusions
+
+Body cleansing significantly reduces the hazard of Staphylococcus aureus infection by 47.7% (HR = 0.523, 95% CI: 0.291–0.940, p = 0.030) compared to routine bathing, consistent across models. The time-varying models suggest that excision and prophylactic antibiotic treatment do not significantly alter this effect. Race (HR = 9.850, 95% CI: 1.318–73.643, p = 0.026) and electric burns (HR = 7.901, p = 0.058) remain notable risk factors. PH violations for Z11 suggest future models could explore time-varying coefficients for burn type.
+
+# Bibliography
+
+Ichida, J. M., Wassell, J. T., & Keller, M. D. (1993). Evaluation of protocol   change in burn-care management using the Cox proportional hazards model with   time-dependent covariates. Statistics in Medicine, 12(3-4), 301310.
+
+Klein, J. P., & Moeschberger, M. L. (1997). Survival Analysis: Techniques for   Censored and Truncated Data. Springer.
+
+Therneau, T. M. (2022). A Package for Survival Analysis in R. R package         version 3.2-13.
+https://CRAN.R-project.org/package=survival
+
+Kassambala, A., Kosinski, M., & Biecek, P. (2021). survminer: Drawing Survival
+  Curves using ggplot2. R package version 0.4.9.              https://CRAN.R-project.org/package=survminer
+
+R Core Team (2022). R: A Language and Environment for Statistical Computing. R   Foundation for Statistical Computing, Vienna, Austria.   https://www.R-project.org/
+
+Therneau, Terry, et al. Using Time Dependent Covariates and Time Dependent Coefficients in the Cox Model, 17 Dec. 2024, cran.r-project.org/web/packages/survival/vignettes/timedep.pdf. 
