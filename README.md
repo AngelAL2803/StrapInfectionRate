@@ -1,4 +1,4 @@
-<h1>Staphylococcus Infection Risk in Burn Victims</h1>
+<h1>Staphylocous Infection Risk in Burn Victims</h1>
 
 <h2>Description</h2>
 This was a <b>group final project</b> for a survival analysis course, conducted by <b>Matthew Aydin, Angel Alcantara, and Adam Sztonyk</b>. The project applies <b>survival analysis techniques</b> to investigate the risk of <b>Staphylococcus aureus infection</b> in burn patients, using the <b>burn dataset</b> from the `KMsurv` package.
