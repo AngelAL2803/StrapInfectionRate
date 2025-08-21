@@ -76,7 +76,6 @@ Together, these visualizations showed that (1) treatment and excision timing are
 
 - <b>StrapInfection.Rmd</b> → R Markdown analysis (full code & methods)
 - <b>StrapInfection.pdf</b> → final report with results and figures (pdf)
-- <b>StrapInfection.html</b> → final report with results and figures (html)
 
 <!--
  ```diff
